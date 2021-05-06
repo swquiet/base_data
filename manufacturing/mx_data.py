@@ -842,7 +842,7 @@ ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
 cursor.execute(" select TRIM(IXKITL) 第二项目号,TRIM(IXLITM)  项目号,\
 TRIM(IXITM) 项目号短,TRIM(IXKIT) 父项号 from proddta.f3002  \
-where TRIM(IXMMCU)='P1'  and TRIM(IXCMCU)='M1' AND TRIM(IXTBM)='O' ")
+where TRIM(IXMMCU)='P1'  and (TRIM(IXCMCU)='M1' or TRIM(IXCMCU)='PW')  AND TRIM(IXTBM)='O' ")
 list_data=[]
 columns=[]
 for c in cursor.description:

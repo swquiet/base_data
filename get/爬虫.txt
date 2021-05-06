@@ -1,0 +1,5 @@
+get_fx.py ：
+每日爬取欧美对人民币的汇率数据
+
+get_invetory_data.py ：
+爬取库存数据

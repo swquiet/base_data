@@ -823,8 +823,15 @@ s1.columns=['短项目号','机型','工序码','总金额','标准小时薪资'
 s1['分摊类型1']='薪资分摊'
 s1['分摊类型2']='有标准工时'
 
-n_hg=s_no[s_no.组别新!=''].groupby(['组别新']).agg({
+n_hg0=s_no[s_no.组别新!=''].groupby(['组别新']).agg({
     '完工数量':'sum','完工重量':'sum'}).reset_index()
+#上述YT1的完工重量和数量，用E02的完工数量和重量替代
+e0=s_no[s_no.组别新!=''].groupby(['组别']).agg({
+    '完工重量':'sum','完工数量':'sum'}).reset_index()
+e1=e0[e0.组别=='E02']
+e1.loc[1,'组别']='YT1'
+e1.columns=['组别新','完工重量','完工数量']
+n_hg=pd.concat([n_hg0[n_hg0.组别新!='YT1'],e1])
 
 smx2=dfs1[dfs1.组别新.isin(n_hg.组别新)]
 

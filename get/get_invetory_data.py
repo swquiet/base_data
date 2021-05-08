@@ -24,7 +24,7 @@ n = jsonpath.jsonpath(json_1, "$..totalPages")[0]
 xx=[]
 for i in range(n):
     print(i)
-    t=random.uniform(0.3,5)
+    t=random.uniform(0.3,3)
     time.sleep( t )
     data= {'pageNo':i+1,'pageSize':'12','type':'0','searchKey':''}
     r = requests.post(url,data=data,headers= header)
@@ -33,21 +33,23 @@ for i in range(n):
     a = jsonpath.jsonpath(json_x, "$..list[*].level3")
     b = jsonpath.jsonpath(json_x, "$..list[*].cardnum")
     c = jsonpath.jsonpath(json_x, "$..list[*].stand")
-    d = jsonpath.jsonpath(json_x, "$..list[*].performancelevel")
+    d = jsonpath.jsonpath(json_x, "$..list[*].mark")
     e = jsonpath.jsonpath(json_x, "$..list[*].surfacetreatment")
-    f =jsonpath.jsonpath(json_x, "$..list[*].storename")
-    g = jsonpath.jsonpath(json_x, "$..list[*].packagetype")
-    h = jsonpath.jsonpath(json_x, "$..list[*].pdstorenum")
-    x=pd.DataFrame([a,b,c,d,e,f,g,h],index=\
-        ['标准','材质','规格','印记','表面处理','店铺','包装方式','库存/千支']).T
+    f = jsonpath.jsonpath(json_x, "$..list[*].brand")
+    g =jsonpath.jsonpath(json_x, "$..list[*].storename")
+    h = jsonpath.jsonpath(json_x, "$..list[*].packagetype")
+    i = jsonpath.jsonpath(json_x, "$..list[*].pdstorenum")
+    x=pd.DataFrame([a,b,c,d,e,f,g,h,i],index=\
+        ['标准','材质','规格','印记','表面处理','品牌','店铺','包装方式','库存/千支']).T
     xx.append(x)
 table=pd.concat(xx)
 table=table[table.标准!=False]
 table=table.fillna('')
-t_data=table.groupby(['标准', '材质', '规格', '印记', '表面处理', '店铺','包装方式'])\
+t_data=table.groupby(['标准', '材质', '规格', '印记', '表面处理','品牌','店铺','包装方式'])\
    ['库存/千支'].sum().to_frame().reset_index()
 t_data['日期']=day
 t_data['日期']=pd.to_datetime(t_data['日期'],format='%Y-%m-%d')
+
 
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
@@ -79,9 +81,11 @@ ap.to_sql('竞对库存数据', engine, if_exists='append', index=False,
            '规格': sqlalchemy.types.String(length=50),
            '印记': sqlalchemy.types.String(length=20),
            '表面处理': sqlalchemy.types.String(length=20),
+           '品牌': sqlalchemy.types.String(length=10),
            '店铺': sqlalchemy.types.String(length=20),
            '包装方式': sqlalchemy.types.String(length=20),
            '库存/千支': sqlalchemy.types.FLOAT()})
-#engine.connect().execute(" ALTER TABLE 竞对库存数据 ADD PRIMARY KEY (日期,标准,材质,规格,印记,表面处理,店铺,包装方式); ")
+#engine.connect().execute(" ALTER TABLE 竞对库存数据 ADD PRIMARY KEY (日期,标准,材质,规格,印记,表面处理,品牌,店铺,包装方式); ")
+
 
 

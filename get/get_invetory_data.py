@@ -42,13 +42,12 @@ for i in range(n):
     x=pd.DataFrame([a,b,c,d,e,f,g,h,i],index=\
         ['标准','材质','规格','印记','表面处理','品牌','店铺','包装方式','库存/千支']).T
     xx.append(x)
-table=pd.concat(xx)
+table=pd.concat(xx).reset_index(drop=True)
 table=table[table.标准!=False]
 table=table.fillna('')
-t_data=table.groupby(['标准', '材质', '规格', '印记', '表面处理','品牌','店铺','包装方式'])\
-   ['库存/千支'].sum().to_frame().reset_index()
-t_data['日期']=day
-t_data['日期']=pd.to_datetime(t_data['日期'],format='%Y-%m-%d')
+table['行数']=table.index
+table['日期']=day
+table['日期']=pd.to_datetime(table['日期'],format='%Y-%m-%d')
 
 
 import psycopg2
@@ -67,7 +66,7 @@ connection.close()
 data = pd.DataFrame(list_data)
 data.columns=columns
 
-ap=t_data[t_data.日期.isin(data.日期.unique())==False]
+ap=table[table.日期.isin(data.日期.unique())==False]
 
 #存入数据
 import sqlalchemy
@@ -76,6 +75,7 @@ engine = create_engine('postgresql+psycopg2://'+'chengben'+':'+'np69gk48fo5kd73h
 #engine.connect().execute(" DROP TABLE 竞对库存数据# ")
 ap.to_sql('竞对库存数据', engine, if_exists='append', index=False,
     dtype={'日期': sqlalchemy.types.DATE(),
+           '行数': sqlalchemy.types.INT(),
            '标准': sqlalchemy.types.String(length=50),
            '材质': sqlalchemy.types.String(length=20),
            '规格': sqlalchemy.types.String(length=50),
@@ -85,7 +85,6 @@ ap.to_sql('竞对库存数据', engine, if_exists='append', index=False,
            '店铺': sqlalchemy.types.String(length=20),
            '包装方式': sqlalchemy.types.String(length=20),
            '库存/千支': sqlalchemy.types.FLOAT()})
-#engine.connect().execute(" ALTER TABLE 竞对库存数据 ADD PRIMARY KEY (日期,标准,材质,规格,印记,表面处理,品牌,店铺,包装方式); ")
-
+#engine.connect().execute(" ALTER TABLE 竞对库存数据 ADD PRIMARY KEY (日期,行数,标准,材质,规格,印记,表面处理,品牌,店铺,包装方式); ")
 
 

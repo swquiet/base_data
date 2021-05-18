@@ -292,8 +292,6 @@ def conv(x):
         return 'P01'
     if x=='R02':
         return 'R01'
-    if x=='XP0':
-        return 'P04'
     else:
         return x
 w12['处理后组别']=w12.组别.apply(conv)
@@ -464,20 +462,40 @@ table_b['分摊类型2']=np.nan
 
 #环保分摊(化学品部分) 66%
 hb1_mx=pd.concat([dx2[dx2.组别.isna()].where(dx2[dx2.组别.isna()].notnull(),''),dx2[dx2.组别=='L02']])
-hb1_mx=hb1_mx.groupby(
-    ['模具项目号']).agg({
-    '总金额':'sum'}).reset_index()
+hb1_mx=hb1_mx.groupby(['模具项目号']).agg({'总金额':'sum'}).reset_index()
 
-hb_std0=pd.DataFrame([25,1,30,34,10],index=\
-        ['P01','P03','P04','R01','G01'],columns=['比例']).reset_index()
-hb_std0.columns=['组别','比例']
-hb_std1=pd.merge(hb_std0,b2x,on='组别',how='left')
+#p04的重量和数量，要加上外采品的重量和数量
+connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
+cur=connection.cursor()
+cur.execute("SELECT  sum(数量) 完工数量,sum(重量) 完工重量 FROM  外采验收表 \
+WHERE 日期 >='" + ay1 + "' AND 日期 <= '" + ay2 + "'")
+list_data=[]
+columns=[]
+for c in cur.description:
+    columns.append(c[0])
+for row in cur.fetchall():
+    list_data.append(row)
+connection.commit()
+cur.close()
+connection.close()
+dw10 = pd.DataFrame(list_data)
+dw10.columns=columns
+
+hb_std=pd.DataFrame([25,1,21,34,10,9],index=\
+        ['P01','P03','P04','R01','G01','XP0'],columns=['比例']).reset_index()
+hb_std.columns=['组别','比例']
+hb_std=pd.merge(hb_std,b2x,on='组别',how='left')
+hb_std01=hb_std[hb_std.组别=='P04']
+hb_std01['完工数量']=hb_std01.完工数量+dw10.完工数量.values[0]
+hb_std01['完工重量']=hb_std01.完工重量+dw10.完工重量.values[0]
+hb_std02=hb_std[hb_std.组别!='P04']
+hb_std03=pd.concat([hb_std01,hb_std02])
 
 #66%的分摊函数
 def six(data):
     x1=[]
     for i in data.模具项目号.unique():
-        a=pd.concat([data[data.模具项目号==i],hb_std1])
+        a=pd.concat([data[data.模具项目号==i],hb_std03])
         a=a.fillna(method='ffill').reset_index(drop=True)
         a['总金额']=a.总金额*0.66*a.比例/100
         a['单支分摊']=a.总金额/a.完工数量
@@ -508,9 +526,7 @@ hb2_amt['分摊类型1']='环保分摊'
 hb2_amt['分摊类型2']='化学品分摊2'
 
 #环保D类
-hb3_mx=d[d.组别.isin(['L01','L02'])].groupby(
-    ['模具项目号']).agg({
-    '总金额':'sum'}).reset_index()
+hb3_mx=d[d.组别.isin(['L01','L02'])].groupby(['模具项目号']).agg({'总金额':'sum'}).reset_index()
 #环保D类，金额的0.66进行分摊
 hb3_amt=six(hb3_mx)
 hb3_amt['分摊类型1']='环保分摊'
@@ -539,7 +555,7 @@ cw = pd.DataFrame(list_data)
 cw.columns=columns
 
 #财报污泥处置 66%的金额 通过组别分摊
-hb5_amt=hb_std1.copy()
+hb5_amt=hb_std03.copy()
 hb5_amt['总金额']=cw[cw.成本类型2=='财报污泥处置'].金额.sum()*hb5_amt.比例*0.66/100
 hb5_amt['每吨分摊']=hb5_amt.总金额*1000/hb5_amt.完工重量
 hb5_amt['单支分摊']=hb5_amt.总金额/hb5_amt.完工数量
@@ -706,8 +722,7 @@ eq_amt['每吨分摊']=eq_amt.总金额*eq_amt.标准生产用电*1000/(eq_amt.�
 eq_amt['单支分摊']=eq_amt.总金额*eq_amt.标准生产用电/(eq_amt.标准生产用电.sum()*eq_amt.完工数量)
 eq_amt['分摊类型1']='水电蒸汽分摊'
 eq_amt['分摊类型2']='水电蒸汽'
-eq_amt=eq_amt[['组别','模具项目号','完工数量','完工重量','总金额','每吨分摊','单支分摊','分摊类型1',
-       '分摊类型2']]
+eq_amt=eq_amt[['组别','模具项目号','完工数量','完工重量','总金额','每吨分摊','单支分摊','分摊类型1','分摊类型2']]
 
 
 #薪资
@@ -876,9 +891,19 @@ s5['处理后组别']='包装薪资'
 s5['分摊类型1']='薪资分摊'
 s5['分摊类型2']='包装薪资'
 
+smx6=dfs[dfs.组别新=='F02']
+
+s6=b2x[b2x.组别=='XP0']
+s6['总金额']=smx6.总薪资.sum()
+s6['单支分摊']=s6.总金额/s6.完工数量
+s6['每吨分摊']=s6.总金额*1000/s6.完工重量.sum()
+s6['分摊类型1']='薪资分摊'
+s6['分摊类型2']='废料薪资'
+
 amt=pd.concat([ABC,y_amt,h_amt,n_amt,hup_amt,oill1_amt,oill2_amt,dc,d1_yes,d_no,\
  table_b,hb1_amt,hb2_amt,hb3_amt,hb4_amt,hb5_amt,hb6_amt,zj1,zj2,zj3,zj_amt,\
-other_amt,eq_amt,s1,s2,s3,s4,s5])
+other_amt,eq_amt,s1,s2,s3,s4,s5,s6])
+amt['单支分摊']=amt['单支分摊'].apply(lambda x:0 if x==float('inf') else x)
 
 for i in ['模具项目号','数量','完工重量','完工数量','单支分摊','每吨分摊','模具寿命',
       '短项目号','标准小时薪资']:
@@ -891,8 +916,6 @@ for i in ['模具项目号','短项目号']:
 #一年算一次，计算的是上一年的分摊数据
 t=nt-1
 amt['分摊计算时间']=t
-print(t)
-amt.to_csv(r'C:\Users\Administrator\Desktop\amt.csv')
 
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")

@@ -22,7 +22,7 @@ TRIM(b.TEDSC1) 机型 from proddta.FE6TM01 a left join proddta.F5631001 b \
 on TRIM(a.PPMCUF)=TRIM(b.TEDRID2) where TRIM(a.ppmmcu) IN('P1')  \
 and a.ppopsc in ('A2')  \
 AND a.PPPBDT>=DTON('" +later_day+ "') AND a.PPPBDT<=DTON('" + near_day + "') \
-AND PPURC1 !='B' AND PPURC1 !='C' and TRIM(a.PPMCUF) not in ('TN-01', 'TS-01') ")
+AND PPURC1 !='C' and TRIM(a.PPMCUF) not in ('TN-01', 'TS-01') ")
 list_data=[]
 columns=[]
 for c in cursor.description:
@@ -65,7 +65,15 @@ for i in df41.index:
     if df41.loc[i,'机台编码']=='SX-04':
         df41.loc[i,'机台编码']='SX-01'
         df41.loc[i,'组别']='QC-100001'
-bg=pd.concat([df41,df42]).groupby(['日期20','短项目号','工序号','工序码','组别','机型']).agg({
+    if df41.loc[i,'工序码']=='B':
+        df41.loc[i,'组别']='XP0'
+df411=df41[df41.组别=='XP0']
+df411['完工重量']=df411['完工数量']
+df411['完工数量']=0
+df412=df41[df41.组别!='XP0']
+bg=pd.concat([df411,df412,df42])
+bg['机型']=bg['机型'].fillna('')
+bg=bg.groupby(['日期20','短项目号','工序号','工序码','组别','机型']).agg({
     '完工数量':'sum','完工重量':'sum'}).reset_index()
 
 import pandas as pd
@@ -984,17 +992,20 @@ if len(list_data)!=0:
         dfs[i]=dfs[i].astype(float)
     dfs=dfs.fillna('')
 
-    dfs1=dfs[(dfs.部门.isin(['生产一部','品保课','环境安全课']))&\
-        (dfs.科.isin(['品保二课','仓储课'])==False)]
-    dfs1['成本类型1']='薪资'
-    smx4=dfs[(dfs.科=='仓储课')&(dfs.组别名=='一期仓管组')]
-    smx4['成本类型1']='薪资'
-    smx4['成本类型2']='仓储薪资'
-    smx5=dfs[(dfs.科=='仓储课')&(dfs.组别名!='一期仓管组')]
-    smx5['成本类型1']='薪资'
-    smx5['成本类型2']='包装薪资'
-    salary=pd.concat([dfs1,smx4,smx5])
-    salary=salary.fillna('')
+    dfs1 = dfs[(dfs.部门.isin(['生产一部', '品保课', '环境安全课'])) & \
+               (dfs.科.isin(['品保二课', '仓储课']) == False)]
+    dfs1['成本类型1'] = '薪资'
+    smx4 = dfs[(dfs.科 == '仓储课') & (dfs.组别名 == '一期仓管组')]
+    smx4['成本类型1'] = '薪资'
+    smx4['成本类型2'] = '仓储薪资'
+    smx5 = dfs[(dfs.科 == '仓储课') & (dfs.组别名 != '一期仓管组')]
+    smx5['成本类型1'] = '薪资'
+    smx5['成本类型2'] = '包装薪资'
+    smx6 = dfs[dfs.组别新 == 'F02']
+    smx6['成本类型1'] = '薪资'
+    smx6['成本类型2'] = '废料薪资'
+    salary = pd.concat([dfs1, smx4, smx5, smx6])
+    salary = salary.fillna('')
 
     import pandas as pd
     import psycopg2
@@ -1020,8 +1031,7 @@ if len(list_data)!=0:
     from sqlalchemy import create_engine
     import sqlalchemy
     import psycopg2
-    engine = create_engine('postgresql+psycopg2://'+'chengben'+':\
-    '+'np69gk48fo5kd73h'+'@192.168.2.156'+':'+str(5432) + '/' + 'chengben')
+    engine = create_engine('postgresql+psycopg2://'+'chengben'+':'+'np69gk48fo5kd73h'+'@192.168.2.156'+':'+str(5432) + '/' + 'chengben')
     #engine.connect().execute(" DROP TABLE 薪资实际成本10# ")
     ap9.to_sql('薪资实际成本10', engine, if_exists='append', index=False,
               dtype={'日期': sqlalchemy.types.DATE(),
@@ -1049,5 +1059,75 @@ if len(list_data)!=0:
     #engine.connect().execute(" ALTER TABLE 薪资实际成本10 ADD PRIMARY KEY \
     #(组别新, 日期, 总薪资, 总时长, 组别名, 科, 部门,成本类型1, 成本类型2); ")
 
+# 外采验收表:
+import cx_Oracle
+import pandas as pd
+ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
+cursor = ora.cursor()
+cursor.execute(" select ntod(PRRCDJ) 日期,TRIM(PRITM) 短项目号,TRIM(PRUOM) 计量单位,\
+PRUREC/1000000 数量 from proddta.f43121 where  \
+(PRDCTO='OP' OR  PRDCTO='OG') and  \
+PRRCDJ>=DTON('" +later_day+ "') AND PRRCDJ<=DTON('" + near_day + "')  \
+and (TRIM(PRMCU)='P1' or TRIM(PRMCU)='GZ' or TRIM(PRMCU)='SZ') \
+AND PRDCT='OV' and PRAN8='55120157' ")
+list_data=[]
+columns=[]
+for c in cursor.description:
+    columns.append(c[0])
+for row in cursor.fetchall():
+    list_data.append(row)
+cursor.close()
+ora.close()
+f= pd.DataFrame(list_data)
+f.columns=columns
+
+#规格为mp(千支)的，验收数量就是数量*1000
+f1=f[f['计量单位']=='MP']
+f1['数量']=f1.数量*1000
+#规格为PC的，验收数量就是数量
+f2=f[f['计量单位']=='PC']
+#规格为KG的，验收数量代表重量
+f3=f[f['计量单位']=='KG']
+f3['重量']=f3.数量
+f4=pd.merge(pd.concat([f1,f2]),weight,on='短项目号',how='left')
+f4['重量']=f4.数量*f4.单支重
+f5=pd.concat([f3,f4.drop('单支重',axis=1)])
+f5=f5.groupby(['日期','短项目号','计量单位']).agg({
+    '数量':'sum','重量':'sum'}).reset_index()
+
+import pandas as pd
+import psycopg2
+connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
+cur=connection.cursor()
+cur.execute("SELECT  distinct 日期  FROM  外采验收表  ")
+list_data=[]
+columns=[]
+for c in cur.description:
+    columns.append(c[0])
+for row in cur.fetchall():
+    list_data.append(row)
+connection.commit()
+cur.close()
+connection.close()
+data10 = pd.DataFrame(list_data)
+data10.columns=columns
+data10['日期']=pd.to_datetime(data10['日期'],format='%Y-%m-%d')
+
+ap10=f5[f5.日期.isin(data10.日期.unique())==False]
+
+#存入数据
+from sqlalchemy import create_engine
+import sqlalchemy
+import psycopg2
+engine = create_engine('postgresql+psycopg2://'+'chengben'+':\
+'+'np69gk48fo5kd73h'+'@192.168.2.156'+':'+str(5432) + '/' + 'chengben')
+#engine.connect().execute(" DROP TABLE 外采验收表# ")
+ap10.to_sql('外采验收表', engine, if_exists='append', index=False,
+          dtype={'日期': sqlalchemy.types.DATE(),
+                 '短项目号': sqlalchemy.types.INT(),
+                 '计量单位': sqlalchemy.types.String(length=10),
+                 '数量': sqlalchemy.types.FLOAT(),
+                 '重量':sqlalchemy.types.FLOAT()})
+#engine.connect().execute(" ALTER TABLE 外采验收表 ADD PRIMARY KEY (日期,短项目号,计量单位,数量,重量); ")
 
 print('完成')

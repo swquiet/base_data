@@ -188,9 +188,31 @@ for row in cur.fetchall():
 connection.commit()
 cur.close()
 connection.close()
-df4 = pd.DataFrame(list_data)
-df4.columns=columns
-df4['日期20']=pd.to_datetime(df4['日期20'],format='%Y-%m-%d')
+df4x = pd.DataFrame(list_data)
+df4x.columns=columns
+df4x['日期20']=pd.to_datetime(df4x['日期20'],format='%Y-%m-%d')
+
+#报工表 加一个组别P04，为外采的重量和数量
+connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
+cur=connection.cursor()
+cur.execute("SELECT  sum(数量) 完工数量,sum(重量) 完工重量 FROM  外采验收表 \
+WHERE 日期 >='" + ay1 + "' AND 日期 <= '" + ay2 + "'")
+list_data=[]
+columns=[]
+for c in cur.description:
+    columns.append(c[0])
+for row in cur.fetchall():
+    list_data.append(row)
+connection.commit()
+cur.close()
+connection.close()
+dw10 = pd.DataFrame(list_data)
+dw10.columns=columns
+dw10['组别']='P04'
+dw10["日期20"]=ay2
+dw10["日期20"]=pd.to_datetime(dw10["日期20"],format='%Y-%m-%d')
+
+df4=pd.concat([dw10,df4x])
 
 #abc类用2年报工数据
 dfg=df4.groupby(['短项目号','工序号','组别']).agg({
@@ -464,38 +486,16 @@ table_b['分摊类型2']=np.nan
 hb1_mx=pd.concat([dx2[dx2.组别.isna()].where(dx2[dx2.组别.isna()].notnull(),''),dx2[dx2.组别=='L02']])
 hb1_mx=hb1_mx.groupby(['模具项目号']).agg({'总金额':'sum'}).reset_index()
 
-#p04的重量和数量，要加上外采品的重量和数量
-connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
-cur=connection.cursor()
-cur.execute("SELECT  sum(数量) 完工数量,sum(重量) 完工重量 FROM  外采验收表 \
-WHERE 日期 >='" + ay1 + "' AND 日期 <= '" + ay2 + "'")
-list_data=[]
-columns=[]
-for c in cur.description:
-    columns.append(c[0])
-for row in cur.fetchall():
-    list_data.append(row)
-connection.commit()
-cur.close()
-connection.close()
-dw10 = pd.DataFrame(list_data)
-dw10.columns=columns
-
 hb_std=pd.DataFrame([25,1,21,34,10,9],index=\
         ['P01','P03','P04','R01','G01','XP0'],columns=['比例']).reset_index()
 hb_std.columns=['组别','比例']
 hb_std=pd.merge(hb_std,b2x,on='组别',how='left')
-hb_std01=hb_std[hb_std.组别=='P04']
-hb_std01['完工数量']=hb_std01.完工数量+dw10.完工数量.values[0]
-hb_std01['完工重量']=hb_std01.完工重量+dw10.完工重量.values[0]
-hb_std02=hb_std[hb_std.组别!='P04']
-hb_std03=pd.concat([hb_std01,hb_std02])
 
 #66%的分摊函数
 def six(data):
     x1=[]
     for i in data.模具项目号.unique():
-        a=pd.concat([data[data.模具项目号==i],hb_std03])
+        a=pd.concat([data[data.模具项目号==i],hb_std])
         a=a.fillna(method='ffill').reset_index(drop=True)
         a['总金额']=a.总金额*0.66*a.比例/100
         a['单支分摊']=a.总金额/a.完工数量
@@ -555,7 +555,7 @@ cw = pd.DataFrame(list_data)
 cw.columns=columns
 
 #财报污泥处置 66%的金额 通过组别分摊
-hb5_amt=hb_std03.copy()
+hb5_amt=hb_std.copy()
 hb5_amt['总金额']=cw[cw.成本类型2=='财报污泥处置'].金额.sum()*hb5_amt.比例*0.66/100
 hb5_amt['每吨分摊']=hb5_amt.总金额*1000/hb5_amt.完工重量
 hb5_amt['单支分摊']=hb5_amt.总金额/hb5_amt.完工数量
@@ -840,13 +840,17 @@ s1['分摊类型2']='有标准工时'
 
 n_hg0=s_no[s_no.组别新!=''].groupby(['组别新']).agg({
     '完工数量':'sum','完工重量':'sum'}).reset_index()
+n_hg1=n_hg0[n_hg0.组别新.isin(['YT1','P04'])==False]
+n_hg2=n_hg0[n_hg0.组别新=='P04']
+n_hg2['完工数量']=n_hg2.完工数量+dw10.完工数量.values[0]
+n_hg2['完工重量']=n_hg2.完工重量+dw10.完工重量.values[0]
 #上述YT1的完工重量和数量，用E02的完工数量和重量替代
 e0=s_no[s_no.组别新!=''].groupby(['组别']).agg({
     '完工重量':'sum','完工数量':'sum'}).reset_index()
-e1=e0[e0.组别=='E02']
-e1.loc[1,'组别']='YT1'
-e1.columns=['组别新','完工重量','完工数量']
-n_hg=pd.concat([n_hg0[n_hg0.组别新!='YT1'],e1])
+n_hg3=e0[e0.组别=='E02']
+n_hg3.loc[1,'组别']='YT1'
+n_hg3.columns=['组别新','完工重量','完工数量']
+n_hg=pd.concat([n_hg1,n_hg2,n_hg3])
 
 smx2=dfs1[dfs1.组别新.isin(n_hg.组别新)]
 

@@ -172,16 +172,6 @@ dx2['数量']=dx2.辅计量
 w12=dx2[(dx2.组别!='L02')&(dx2.组别.notna())].groupby(
     ['日期','模具项目号','组别','物料大类','物料小类','单位成本']).agg({
     '数量':'sum','总金额':'sum'}).reset_index()
-def conv(x):
-    if x in ['P11','P12', 'P13', 'P14']:
-        return 'P01'
-    if x=='R02':
-        return 'R01'
-    if x=='XP0':
-        return 'P04'
-    else:
-        return x
-w12['处理后组别']=w12.组别.apply(conv)
 w12['成本类型1']='化学品'
 
 #环保 lo2和组别为空的部分
@@ -189,9 +179,8 @@ hb1_mx=pd.concat([dx2[dx2.组别.isna()].where(dx2[dx2.组别.isna()].notnull(),
 hb1=hb1_mx.groupby(
     ['日期','模具项目号','组别','物料大类','物料小类','单位成本']).agg({
     '数量':'sum','总金额':'sum'}).reset_index()
-hb1['处理后组别']='无制程'
-hb1['成本类型1']='环保'
-hb1['成本类型2']='化学品部分'
+hb1['成本类型1']='化学品'
+hb1['成本类型2']='化学品_环保'
 
 #验收表
 import psycopg2
@@ -219,36 +208,37 @@ d['金额']=d.验收数量*d.单位成本
 d2=d[d['物料小类']=='LLO']
 
 # D类中的 油品'LLO',根据报工表（成型1000），按重量分摊
-d2=d[d['物料小类']=='LLO']
-
+d2=d[(d['物料小类']=='LLO')&(d['组别']!='K01')]
 llo_mix1=d2[d2.工序码_油!=''].groupby(
     ['定单日期','模具项目号','工序码_油','物料大类_','物料小类','组别','单位成本']).agg({
     '验收数量':'sum','金额':'sum'}).reset_index()
 llo_mix1.columns=['日期','模具项目号','工序码_油','物料大类','物料小类','组别','单位成本','数量','总金额']
-llo_mix1['处理后组别']='无制程'
 llo_mix1['成本类型1']='油'
-llo_mix1['成本类型2']='有组别'
 llo_mix2=d2[d2.工序码_油==''].groupby(
     ['定单日期','模具项目号','物料大类_','物料小类','组别','单位成本']).agg({
     '验收数量':'sum','金额':'sum'}).reset_index()
 llo_mix2.columns=['日期','模具项目号','物料大类','物料小类','组别','单位成本','数量','总金额']
-llo_mix2['处理后组别']='无制程'
 llo_mix2['成本类型1']='油'
-llo_mix2['成本类型2']='无组别'
-llo_mx=pd.concat([llo_mix1,llo_mix2])
+llo_mix3=d[(d['物料小类']=='LLO')&(d['组别']=='K01')].groupby(
+    ['定单日期','模具项目号','工序码_油','物料大类_','物料小类','组别','单位成本']).agg({
+    '验收数量':'sum','金额':'sum'}).reset_index()
+llo_mix3.columns=['日期','模具项目号','工序码_油','物料大类','物料小类','组别','单位成本','数量','总金额']
+llo_mix3['成本类型1']='油'
+llo_mix3['成本类型3']='仓储物料'
+llo_mx=pd.concat([llo_mix1,llo_mix2,llo_mix3])
 
 #仓储：‘K01'
-dc=d[d['组别']=='K01']
+dc=d[(d['组别']=='K01')&(d['物料小类']!='LLO')]
 dc_mx=dc.groupby(
     ['定单日期','模具项目号','组别','物料大类_','物料小类','单位成本']).agg({
     '验收数量':'sum','金额':'sum'}).reset_index()
-dc_mx['处理后组别']=dc_mx.组别
-dc_mx['成本类型1']='仓储物料'
-dc_mx.columns=['日期','模具项目号','组别','物料大类','物料小类','单位成本','数量','总金额','处理后组别','成本类型1']
+dc_mx['成本类型1']='D类物料'
+dc_mx['成本类型2']='仓储物料'
+dc_mx.columns=['日期','模具项目号','组别','物料大类','物料小类','单位成本','数量','总金额','成本类型1','成本类型2']
 
 #d类剔除 ['LLO','K01','Z01','L01','L02']
-d1=d[d.组别.isin(['LLO','K01','Z01','L01','L02'])==False]
-
+d1=d[(d.组别.isin(['LLO','K01','Z01','L01','L02'])==False)&\
+     (d['物料小类']!='LLO')]
 d_mx=d1.groupby(['定单日期','模具项目号','组别','物料大类_','物料小类','单位成本']).agg({
     '验收数量':'sum','金额':'sum'}).reset_index()
 d_mx['成本类型1']='D类物料'
@@ -262,18 +252,17 @@ db['组别']=db.组别.fillna('')
 db_mx=pd.concat([db,d[d.组别.isin(['Z01'])]]).groupby(
     ['定单日期','模具项目号','组别','物料大类_','物料小类','单位成本']).agg({
     '验收数量':'sum','金额':'sum'}).reset_index()
-db_mx['处理后组别']='包装组'
 db_mx['成本类型1']='包装材料'
-db_mx.columns=['日期','模具项目号','组别','物料大类','物料小类','单位成本','数量','总金额','处理后组别','成本类型1']
+db_mx.columns=['日期','模具项目号','组别','物料大类','物料小类','单位成本','数量','总金额','成本类型1']
+
 
 #'L01','L02'归为环保
 hb_d=d[d.组别.isin(['L01','L02'])].groupby(
     ['定单日期','模具项目号','组别','物料大类_','物料小类','单位成本']).agg({
     '验收数量':'sum','金额':'sum'}).reset_index()
 hb_d.columns=['日期','模具项目号','组别','物料大类','物料小类','单位成本','数量','总金额']
-hb_d['处理后组别']='无制程'
-hb_d['成本类型1']='环保'
-hb_d['成本类型2']='环保D类'
+hb_d['成本类型1']='D类物料'
+hb_d['成本类型2']='环保'
 
 mx=pd.concat([abc,w12,hb1,llo_mx,dc_mx,d_mx,db_mx,hb_d])
 mx=mx.fillna('')
@@ -305,7 +294,7 @@ import sqlalchemy
 import psycopg2
 engine = create_engine('postgresql+psycopg2://'+'chengben'+':\
 '+'np69gk48fo5kd73h'+'@192.168.2.156'+':'+str(5432) + '/' + 'chengben')
-#engine.connect().execute(" DROP TABLE 物料实际成本9# ")
+#engine.connect().execute(" DROP TABLE 物料实际成本9 ")
 ap.to_sql('物料实际成本9', engine, if_exists='append', index=False,
           dtype={'日期': sqlalchemy.types.DATE(),
                  '模具项目号': sqlalchemy.types.INT(),
@@ -313,14 +302,13 @@ ap.to_sql('物料实际成本9', engine, if_exists='append', index=False,
                  '工序码_油': sqlalchemy.types.String(length=20),
                  '工序码': sqlalchemy.types.String(length=20),
                  '组别': sqlalchemy.types.String(length=10),
-                 '处理后组别':sqlalchemy.types.String(length=10),
                  '物料大类':sqlalchemy.types.String(length=10),
                  '物料小类':sqlalchemy.types.String(length=10),
                  '单位成本': sqlalchemy.types.FLOAT(),
                  '数量': sqlalchemy.types.FLOAT(),
                  '总金额': sqlalchemy.types.FLOAT(),
                  '成本类型1': sqlalchemy.types.String(length=20),
-                 '成本类型2': sqlalchemy.types.String(length=20)})
-#engine.connect().execute(" ALTER TABLE 物料实际成本9 ADD PRIMARY KEY (日期,模具项目号,批次序列号,组别,处理后组别,物料大类,物料小类,工序码,工序码_油,单位成本,数量,成本类型1,成本类型2); ")
-
+                 '成本类型2': sqlalchemy.types.String(length=20),
+                 '成本类型3': sqlalchemy.types.String(length=20)})
+#engine.connect().execute(" ALTER TABLE 物料实际成本9 ADD PRIMARY KEY (日期,模具项目号,批次序列号,组别,物料大类,物料小类,工序码,工序码_油,单位成本,数量); ")
 

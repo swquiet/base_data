@@ -103,7 +103,9 @@ df_p=df312.sort_values(by='定单日期').drop_duplicates(\
 
 
 #物料耗用表为主表，进行拼接。
-df33=pd.merge(df2x,df_p,on=['模具项目号','批次序列号'],how='left')
+df33=pd.merge(df2x,df_p.drop('物料小类',axis=1),on=['模具项目号','批次序列号'],how='left')
+df33=pd.merge(df33,df32,left_on='模具项目号',right_on='短项目号',how='left').drop('短项目号',axis=1)
+
 # w12 为化学品，需要单独处理
 dx1=df33[df33['物料小类']!='W12']
 dx2=df33[df33['物料小类']=='W12']

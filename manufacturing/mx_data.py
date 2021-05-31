@@ -1130,4 +1130,94 @@ ap10.to_sql('外采验收表', engine, if_exists='append', index=False,
                  '重量':sqlalchemy.types.FLOAT()})
 #engine.connect().execute(" ALTER TABLE 外采验收表 ADD PRIMARY KEY (日期,短项目号,计量单位,数量,重量); ")
 
+
+# 固定资产折旧表:
+import cx_Oracle
+import pandas as pd
+ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
+cursor = ora.cursor()
+cursor.execute(" select ntod(FAEFTB) 开始日期,FANUMB 资产号,\
+TRIM(FAMCU) 组别 from proddta.F1201 where FAXOBJ='4201' AND FAXSUB='05' and \
+FAEFTB>=DTON('" +later_day+ "') AND FAEFTB<=DTON('" + near_day + "')  ")
+list_data=[]
+columns=[]
+for c in cursor.description:
+    columns.append(c[0])
+for row in cursor.fetchall():
+    list_data.append(row)
+cursor.close()
+ora.close()
+#如果有数据则不为0，处理数据。
+if len(list_data)==0:
+    pass
+if len(list_data)!=0:
+    df7x1= pd.DataFrame(list_data)
+    df7x1.columns=columns
+
+    ora = cx_Oracle.connect('TONGTJ', ' TONGTJ', '172.16.4.14:1521/TMJDEDB')
+    cursor = ora.cursor()
+    cursor.execute(" select distinct FLNUMB 资产号,FLADLM/12  折旧年份,FLAPYC/100 原值,\
+    FLTKER/100 预计残值,FLFY from proddta.F1202 WHERE  FLOBJ='1601' and FLAPYC>0 ")
+    list_data = []
+    columns = []
+    for c in cursor.description:
+        columns.append(c[0])
+    for row in cursor.fetchall():
+        list_data.append(row)
+    cursor.close()
+    ora.close()
+    df7x2 = pd.DataFrame(list_data)
+    df7x2.columns = columns
+    x3 = []
+    for i in df7x2.资产号.unique():
+        a = df7x2[df7x2.资产号 == i]
+        b = a[a.FLFY == a.FLFY.max()].sort_values(by='原值')[-1:]
+        x3.append(b)
+    df7x3 = pd.concat(x3).drop('FLFY', axis=1)
+
+    df7x4 = pd.merge(df7x1, df7x3, on='资产号', how='left').dropna(subset=['折旧年份'], axis=0)
+    df7x4['开始日期'] = df7x4['开始日期'].dt.strftime('%Y-%m-%d')
+    df7x4['开始日期'] = pd.to_datetime(df7x4.开始日期, format='%Y-%m-%d')
+    for i in df7x4.index:
+        j = int(df7x4.loc[i, '折旧年份'] * 365)
+        df7x4.loc[i, '结束日期'] = df7x4.loc[i, '开始日期'] + np.timedelta64(j, 'D')
+    df7x4['结束日期'] = df7x4['结束日期'].dt.strftime('%Y-%m-%d')
+    df7x4['结束日期'] = pd.to_datetime(df7x4.结束日期, format='%Y-%m-%d')
+
+    connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h",
+                                  host="192.168.2.156", port="5432")
+    cur = connection.cursor()
+    cur.execute("SELECT  distinct 开始日期  FROM  固定资产折旧表  ")
+    list_data = []
+    columns = []
+    for c in cur.description:
+        columns.append(c[0])
+    for row in cur.fetchall():
+        list_data.append(row)
+    connection.commit()
+    cur.close()
+    connection.close()
+    data11 = pd.DataFrame(list_data)
+    data11.columns = columns
+    data11['开始日期'] = pd.to_datetime(data11['开始日期'], format='%Y-%m-%d')
+
+    ap11 = df7x4[df7x4.开始日期.isin(data11.开始日期.unique()) == False]
+
+    # 存入数据
+    from sqlalchemy import create_engine
+    import sqlalchemy
+    import psycopg2
+    engine = create_engine('postgresql+psycopg2://' + 'chengben' + ':\
+    ' + 'np69gk48fo5kd73h' + '@192.168.2.156' + ':' + str(5432) + '/' + 'chengben')
+    # engine.connect().execute(" DROP TABLE 固定资产折旧表# ")
+    ap11.to_sql('固定资产折旧表', engine, if_exists='append', index=False,
+                dtype={'开始日期': sqlalchemy.types.DATE(),
+                       '结束日期': sqlalchemy.types.DATE(),
+                       '资产号': sqlalchemy.types.INT(),
+                       '组别': sqlalchemy.types.String(length=10),
+                       '折旧年份': sqlalchemy.types.INT(),
+                       '原值': sqlalchemy.types.FLOAT(),
+                       '预计残值': sqlalchemy.types.FLOAT()})
+    # engine.connect().execute(" ALTER TABLE 固定资产折旧表 ADD PRIMARY KEY (开始日期,资产号,组别,折旧年份,原值,预计残值); ")
+
 print('完成')

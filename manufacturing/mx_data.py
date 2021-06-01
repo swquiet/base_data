@@ -477,7 +477,7 @@ import pandas as pd
 ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
 cursor.execute(" select ntod2(ILTRDJ) 日期,TRIM(ILITM) 模具项目号,\
-TRIM(ILLOTN) 批次序列号,ILGLPT 物料大类,ILSQOR/1000000*-1  主计量,\
+TRIM(ILLOTN) 批次序列号,ILSQOR/1000000*-1  主计量,\
 ILTRQT/1000000*-1  辅计量 ,TRIM(ILRCD) 组别 ,ILDCT 单据类型 from proddta.f4111 where \
 TRIM(ILMCU)='W1' and  ILTRDJ>=DTON('" +later_day+ "') AND \
 ILTRDJ<=DTON('" + near_day + "') and ILDCT in ('IG','IL','IM','IY','IC')  ")
@@ -520,6 +520,25 @@ def get_tail(x):
 # 批次序列号 尾数为Z的数据，不用
 df2['尾数']=df2.批次序列号.apply(get_tail)
 df2=df2[df2.尾数!='Z']
+
+# 把物料大类 拼接到耗用表
+ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
+cursor = ora.cursor()
+cursor.execute(" select distinct  TRIM(IMPRP1) 物料大类,\
+TRIM(IMITM) 模具项目号 from proddta.F4101 where TRIM(IMPRP2)!='FM' and \
+(TRIM(IMPRP4)='SM' or TRIM(IMPRP4)='PM') ")
+list_data=[]
+columns=[]
+for c in cursor.description:
+    columns.append(c[0])
+for row in cursor.fetchall():
+    list_data.append(row)
+cursor.close()
+ora.close()
+df32= pd.DataFrame(list_data)
+df32.columns=columns
+df2=pd.merge(df2,df32,on='模具项目号',how='left')
+
 
 #提取匹配【定单类型】
 ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')

@@ -560,6 +560,7 @@ df2t=pd.merge(df2,tj,on=['批次序列号','模具项目号'],how='left')
 df2t=df2t[df2t.定单类型.isin(['A1','IK'])==False].drop('尾数',axis=1)
 df2t['主计量']=df2t.主计量.fillna(0)
 df2t['辅计量']=df2t.辅计量.fillna(0)
+df2t=df2t.fillna('')
 df2x=df2t.groupby(['日期','模具项目号','批次序列号','物料大类','组别','单据类型',
        '工序码', '定单类型']).agg({'主计量':'sum','辅计量':'sum'}).reset_index()
 

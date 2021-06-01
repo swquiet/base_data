@@ -17,7 +17,7 @@ cursor = ora.cursor()
 cursor.execute("select  ntod2(a.pppbdt) 日期20 \
 ,TRIM((select C.IMITM FROM proddta.F4101 C WHERE C.IMITM = a.PPKIT )) 短项目号,\
 a.ppsoqs/1000000 完工数量,TRIM(a.ppmcu) 工作中心,TRIM(PPURC1) 工序码,\
-TRIM(a.ppopsq) 工序号,TRIM(PPMCUF) 机台编码,TRIM(b.TEMCUW) 组别 ,\
+TRIM(a.ppopsq) 工序号,TRIM(PPMCUF) 机台编码,TRIM(b.TEMCUW) 原组别 ,\
 TRIM(b.TEDSC1) 机型 from proddta.FE6TM01 a left join proddta.F5631001 b \
 on TRIM(a.PPMCUF)=TRIM(b.TEDRID2) where TRIM(a.ppmmcu) IN('P1')  \
 and a.ppopsc in ('A2')  \
@@ -54,7 +54,7 @@ weight.columns=columns
 df4x=pd.merge(df4x,weight,on='短项目号',how='left')
 df4x['完工重量']=df4x.完工数量*df4x.单支重
 
-df4x['组别']=df4x.组别.apply(lambda x :'B03' if x=='B05' else x)
+df4x['组别']=df4x.原组别.apply(lambda x :'B03' if x=='B05' else x)
 df41=df4x[df4x.组别.isna()]
 df42=df4x[df4x.组别.notna()]
 
@@ -73,7 +73,8 @@ df411['完工数量']=0
 df412=df41[df41.组别!='XP0']
 bg=pd.concat([df411,df412,df42])
 bg['机型']=bg['机型'].fillna('')
-bg=bg.groupby(['日期20','短项目号','工序号','工序码','组别','机型']).agg({
+bg['原组别']=bg['原组别'].fillna('')
+bg=bg.groupby(['日期20','短项目号','工序号','工序码','组别','原组别','机型']).agg({
     '完工数量':'sum','完工重量':'sum'}).reset_index()
 
 import pandas as pd
@@ -110,10 +111,11 @@ ap1.to_sql('报工表', engine, if_exists='append', index=False,
                  '工序号': sqlalchemy.types.INT(),
                  '工序码': sqlalchemy.types.String(length=20),
                  '组别': sqlalchemy.types.String(length=10),
+                '原组别': sqlalchemy.types.String(length=10),
                  '机型': sqlalchemy.types.String(length=10),
                  '完工数量': sqlalchemy.types.FLOAT(),
                  '完工重量': sqlalchemy.types.FLOAT()})
-#engine.connect().execute(" ALTER TABLE 报工表 ADD PRIMARY KEY (日期20,短项目号,工序号,组别,机型); ")
+#engine.connect().execute(" ALTER TABLE 报工表 ADD PRIMARY KEY (日期20,短项目号,工序号,组别,原组别,机型); ")
 
 
 # 入库表:

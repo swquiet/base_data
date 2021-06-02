@@ -106,9 +106,6 @@ df_p=df312.sort_values(by='定单日期').drop_duplicates(\
 df33=pd.merge(df2x,df_p.drop('物料小类',axis=1),on=['模具项目号','批次序列号'],how='left')
 df33=pd.merge(df33,df32,left_on='模具项目号',right_on='短项目号',how='left').drop('短项目号',axis=1)
 
-# w12 为化学品，需要单独处理
-dx1=df33[df33['物料小类']!='W12']
-dx2=df33[df33['物料小类']=='W12']
 
 #获取标准成本，再次进行匹配
 import cx_Oracle
@@ -129,28 +126,35 @@ sp= pd.DataFrame(list_data)
 sp.columns=columns
 
 
-x1=dx1[dx1.单位成本.notna()]
-x2=dx1[dx1.单位成本.isna()].drop(['单位成本'], axis=1)
+x1=df33[(df33.单位成本.notna())&(df33.单位成本!=0)]
+x2=df33[df33.单位成本.isna()].drop(['单位成本'], axis=1)
+x3=df33[df33.单位成本==0].drop(['单位成本'], axis=1)
+x4=pd.concat([x2,x3])
 #能取到标准成本用标准成本
-x21=pd.merge(x2,sp,on='模具项目号',how='left')
-x211=x21[x21.单位成本!=0]
+x21=pd.merge(x4,sp,on='模具项目号',how='left')
+x211=x21[(x21.单位成本!=0)&(x21.单位成本.notna())]
 
 #不能取到标准成本，需要用最早日期作为成本
-x212=x21[x21.单位成本==0].drop(['单位成本'], axis=1)
+x212=x21[x21.index.isin(x211.index)==False].drop(['单位成本'], axis=1)
 # 模具项目号，获取验收表最早日期为其单位价格
 price=df312[['定单日期','模具项目号','单位成本']].sort_values(\
     by=['定单日期','单位成本'],ascending=[True,False]).drop_duplicates(\
     subset=['模具项目号'],keep='last')[['模具项目号','单位成本']]
 x212a=pd.merge(x212,price,on='模具项目号',how='left')
 
-# 依然匹配不到单价的，不用
-x212a=x212a[x212a.单位成本.notna()]
+# 依然匹配不到单价的，删除
+x212a=x212a[(x212a.单位成本!=0)&(x212a.单位成本.notna())]
 
-dx11=pd.concat([x211,x212a,x1]).drop(['定单日期'],axis=1)
+dx12=pd.concat([x211,x212a,x1]).drop(['定单日期'],axis=1)
+dx12=dx12.fillna('')
 
-a=dx11[dx11['物料大类']=='AM']
-b=dx11[dx11['物料大类']=='BM']
-c=dx11[dx11['物料大类']=='CM']
+# w12 为化学品，需要单独处理
+dx1=dx12[dx12['物料小类']!='W12']
+dx2=dx12[dx12['物料小类']=='W12']
+
+a=dx1[dx1['物料大类']=='AM']
+b=dx1[dx1['物料大类']=='BM']
+c=dx1[dx1['物料大类']=='CM']
 a['总金额']=a.主计量*a.单位成本
 a=a.rename(columns={'主计量':'数量'})
 b['总金额']=b.主计量*b.单位成本
@@ -158,10 +162,6 @@ b=b.rename(columns={'主计量':'数量'})
 c['总金额']=c.辅计量*c.单位成本
 c=c.rename(columns={'辅计量':'数量'})
 abc_x=pd.concat([a,b,c]).reset_index(drop=True)
-abc_x['组别']=abc_x.组别.fillna('')
-abc_x['工序码']=abc_x.工序码.fillna('')
-abc_x['物料小类']=abc_x.物料小类.fillna('')
-abc_x['批次序列号']=abc_x.批次序列号.fillna('')
 abc=abc_x.groupby(['日期','模具项目号','批次序列号','组别','工序码','物料大类','物料小类','单位成本']).agg({
     '数量':'sum','总金额':'sum'
 }).reset_index()
@@ -268,7 +268,6 @@ hb_d['成本类型2']='环保'
 
 mx=pd.concat([abc,w12,hb1,llo_mx,dc_mx,d_mx,db_mx,hb_d])
 mx=mx.fillna('')
-
 
 import pandas as pd
 import psycopg2

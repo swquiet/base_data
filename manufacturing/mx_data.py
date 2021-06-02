@@ -478,7 +478,7 @@ ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
 cursor.execute(" select ntod2(ILTRDJ) 日期,TRIM(ILITM) 模具项目号,\
 TRIM(ILLOTN) 批次序列号,ILSQOR/1000000*-1  主计量,\
-ILTRQT/1000000*-1  辅计量 ,TRIM(ILRCD) 组别 ,ILDCT 单据类型 from proddta.f4111 where \
+ILTRQT/1000000*-1  辅计量 ,TRIM(ILRCD) 原组别 ,ILDCT 单据类型 from proddta.f4111 where \
 TRIM(ILMCU)='W1' and  ILTRDJ>=DTON('" +later_day+ "') AND \
 ILTRDJ<=DTON('" + near_day + "') and ILDCT in ('IG','IL','IM','IY','IC')  ")
 list_data=[]
@@ -491,7 +491,7 @@ cursor.close()
 ora.close()
 df2= pd.DataFrame(list_data)
 df2.columns=columns
-df2['组别']=df2.组别.apply(lambda x :'B03' if x=='B05' else x)
+df2['组别']=df2.原组别.apply(lambda x :'B03' if x=='B05' else x)
 #匹配 工序码(abc)
 import cx_Oracle
 import pandas as pd
@@ -561,7 +561,7 @@ df2t=df2t[df2t.定单类型.isin(['A1','IK'])==False].drop('尾数',axis=1)
 df2t['主计量']=df2t.主计量.fillna(0)
 df2t['辅计量']=df2t.辅计量.fillna(0)
 df2t=df2t.fillna('')
-df2x=df2t.groupby(['日期','模具项目号','批次序列号','物料大类','组别','单据类型',
+df2x=df2t.groupby(['日期','模具项目号','批次序列号','物料大类','原组别','组别','单据类型',
        '工序码', '定单类型']).agg({'主计量':'sum','辅计量':'sum'}).reset_index()
 
 import pandas as pd
@@ -596,6 +596,7 @@ ap6.to_sql('物料耗用表', engine, if_exists='append', index=False,
           dtype={'日期': sqlalchemy.types.DATE(),
                  '模具项目号': sqlalchemy.types.INT(),
                  '批次序列号': sqlalchemy.String(length=20),
+                '原组别': sqlalchemy.String(length=20),
                  '组别': sqlalchemy.types.String(length=10),
                  '工序码': sqlalchemy.types.String(length=10),
                  '物料大类':sqlalchemy.types.String(length=10),
@@ -603,7 +604,7 @@ ap6.to_sql('物料耗用表', engine, if_exists='append', index=False,
                  '定单类型': sqlalchemy.types.String(length=20),
                  '主计量': sqlalchemy.types.INT(),
                  '辅计量': sqlalchemy.types.INT()})
-#engine.connect().execute(" ALTER TABLE 物料耗用表 ADD PRIMARY KEY (日期,模具项目号,批次序列号,组别,工序码,物料大类,单据类型,定单类型); ")
+#engine.connect().execute(" ALTER TABLE 物料耗用表 ADD PRIMARY KEY (日期,模具项目号,批次序列号,原组别,组别,工序码,物料大类,单据类型,定单类型); ")
 
 
 # 物料验收表数据

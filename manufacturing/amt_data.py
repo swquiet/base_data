@@ -99,7 +99,7 @@ cursor.close()
 ora.close()
 df32= pd.DataFrame(list_data)
 df32.columns=columns
-df312=pd.merge(df31,df32,on='短项目号',how='left').drop('短项目号',axis=1)
+df312=pd.merge(df31,df32,on='短项目号',how='left')
 def get_tail(x):
     if x=='' :
         return x
@@ -111,7 +111,10 @@ df312=df312[df312.尾数!='Z'].drop('尾数',axis=1)
 df_p=df312.sort_values(by='定单日期').drop_duplicates(subset=['模具和批号'],keep='first')
 
 #物料耗用表为主表，进行拼接。
-df33=pd.merge(df2x,df_p,on=['模具项目号','批次序列号'],how='left')
+df33=pd.merge(df2x,df_p.drop('物料小类',axis=1),on=['模具项目号','批次序列号'],how='left')
+df33=pd.merge(df33,df32[['短项目号','物料小类']].drop_duplicates(subset=['短项目号','物料小类'],keep='first'),\
+    on='短项目号',how='left').drop('短项目号',axis=1)
+
 # w12 为化学品，需要单独处理
 dx1=df33[df33['物料小类']!='W12']
 dx2=df33[df33['物料小类']=='W12']
@@ -151,9 +154,9 @@ x212a=x212a[x212a.单位成本.notna()]
 
 dx11=pd.concat([x211,x212a,x1]).drop(['定单日期','模具和批号'],axis=1)
 
-a=dx11[dx11['物料大类']=='00AM']
-b=dx11[dx11['物料大类']=='00BM']
-c=dx11[dx11['物料大类']=='00CM']
+a=dx11[dx11['物料大类']=='AM']
+b=dx11[dx11['物料大类']=='BM']
+c=dx11[dx11['物料大类']=='CM']
 a['总金额']=a.主计量*a.单位成本
 a=a.rename(columns={'主计量':'数量'})
 b['总金额']=b.主计量*b.单位成本
@@ -573,20 +576,7 @@ hb6_amt['模具项目号']=0
 hb6_amt['分摊类型1']='环保分摊'
 hb6_amt['分摊类型2']='污泥处置2'
 
-#折旧
-#P1:归为包装折旧 ,按df5b重量和数量分摊
-zj1=pd.DataFrame([df5b.数量.sum(),df5b.重量.sum(),\
-cw[cw.成本类型2=='包装折旧'].金额.sum()],index=['数量','重量','金额']).T
-zj1.columns=['完工数量','完工重量','总金额']
-zj1['模具项目号']=0
-zj1['组别']='P1'
-zj1['单支分摊']=zj1.总金额/zj1.完工数量
-zj1['每吨分摊']=zj1.总金额*1000/zj1.完工重量
-zj1['分摊类型1']='折旧分摊'
-zj1['分摊类型2']='包装折旧'
 
-
-import pandas as pd
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
 cur=connection.cursor()
@@ -604,19 +594,73 @@ connection.close()
 df5d = pd.DataFrame(list_data)
 df5d.columns=columns
 
-#['10700','D02','C04']和70%【11000】 按df5d重量和数量分
-cw_q=cw[cw.成本类型2=='其他折旧']
-zj2=pd.DataFrame([df5d.数量.sum(),df5d.重量.sum(),\
-    cw_q[cw_q.经营单位.isin(['10700','D02','C04'])].金额.sum()+\
-    cw_q[cw_q.经营单位=='11000'].金额.sum()*0.7],index=['数量','重量','金额']).T
-zj2.columns=['完工数量','完工重量','总金额']
-zj2['模具项目号']=0
-zj2['单支分摊']=zj2.总金额/zj2.完工数量
-zj2['每吨分摊']=zj2.总金额*1000/zj2.完工重量
-zj2['分摊类型1']='折旧分摊'
-zj2['分摊类型2']='其他折旧'
+#其他，分摊给全部产品
+other_amt=pd.DataFrame([df5d.数量.sum(),df5d.重量.sum(),\
+        cw[cw.成本类型1=='其他'].金额.sum()],index=['数量','重量','金额']).T
+other_amt['模具项目号']=0
+other_amt['单支分摊']=other_amt.金额/other_amt.数量
+other_amt['每吨分摊']=other_amt.金额*1000/other_amt.重量.sum()
+other_amt.columns=['完工数量','完工重量','总金额','模具项目号','单支分摊','每吨分摊']
+other_amt['分摊类型1']='其他分摊'
 
+
+#折旧：统一从固定资产折旧表取
 import pandas as pd
+import psycopg2
+connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
+cur=connection.cursor()
+cur.execute("SELECT  * FROM  固定资产折旧表  ")
+list_data=[]
+columns=[]
+for c in cur.description:
+    columns.append(c[0])
+for row in cur.fetchall():
+    list_data.append(row)
+connection.commit()
+cur.close()
+connection.close()
+data11 = pd.DataFrame(list_data)
+data11.columns=columns
+
+data11['开始日期']=pd.to_datetime(data11.开始日期,format='%Y-%m-%d')
+data11['结束日期']=pd.to_datetime(data11.结束日期,format='%Y-%m-%d')
+data11=data11[(data11.结束日期>=ay1)&(data11.开始日期<=ay2)].dropna(subset=['原值'],axis=0)
+data11['今年初']=ay1
+data11['今年末']=ay2
+data11['今年初']=pd.to_datetime(data11.今年初,format='%Y-%m-%d')
+data11['今年末']=pd.to_datetime(data11.今年末,format='%Y-%m-%d')
+data11['天数1']=data11.结束日期-data11.今年初
+data11['天数1']=data11['天数1'].astype(str).apply(lambda x:x[:-23])
+data11['天数1']=data11['天数1'].astype(int)
+data11['天数2']=data11.今年末-data11.开始日期
+data11['天数2']=data11['天数2'].astype(str).apply(lambda x:x[:-24])
+data11['天数2']=data11['天数2'].astype(int)
+
+a1=data11[data11.天数1<365]
+a1['总金额']=(a1.原值-a1.预计残值)*a1.天数1/(a1.折旧年份*365)
+a2=data11[(data11.天数2>0)&(data11.天数2<365)]
+a2['总金额']=(a2.原值-a2.预计残值)*a2.天数2/(a2.折旧年份*365)
+a3=data11[data11.index.isin(a1.index|a2.index)==False]
+a3['总金额']=(a3.原值-a3.预计残值)/a3.折旧年份
+a4=pd.concat([a1,a2,a3])
+z=['10600','10700','10701','10702','10703','10704',\
+'A01','A02','A03','A04','B01','B02','B03','B04','B05',\
+'C01','C02','C03', 'C04','C05','D01','D02', \
+'E01','G01','K01','M01','P01','R01','S01','T01','T02','Y01']
+a5=a4[a4.组别.isin(z)]
+a6=a5.groupby(['组别'])['总金额'].sum().to_frame().reset_index()
+
+#包装折旧
+zj1=a6[a6.组别=='K01']
+zj1['完工数量']=df5b.数量.sum()
+zj1['完工重量']=df5b.重量.sum()
+zj1['模具项目号']=0
+zj1['单支分摊']=zj1.总金额/zj1.完工数量
+zj1['每吨分摊']=zj1.总金额*1000/zj1.完工重量
+zj1['分摊类型1']='折旧分摊'
+zj1['分摊类型2']='包装折旧'
+
+
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
 cur=connection.cursor()
@@ -634,38 +678,88 @@ connection.close()
 df6 = pd.DataFrame(list_data)
 df6.columns=columns
 
-#PP:归为仓储折旧  按仓储df6重量和数量分摊
-zj3=pd.DataFrame([df6.数量.sum(),df6.重量.sum(),\
-    cw[cw.成本类型2=='仓储折旧'].金额.sum()],index=['数量','重量','金额']).T
-zj3.columns=['完工数量','完工重量','总金额']
-zj3['模具项目号']=0
-zj3['组别']='PP'
-zj3['单支分摊']=zj3.总金额/zj3.完工数量
-zj3['每吨分摊']=zj3.总金额*1000/zj3.完工重量
-zj3['分摊类型1']='折旧分摊'
-zj3['分摊类型2']='仓储折旧'
+#仓储折旧
+zj2=a6[a6.组别=='10600']
+zj2['完工数量']=df6.数量.sum()
+zj2['完工重量']=df6.重量.sum()
+zj2['模具项目号']=0
+zj2['单支分摊']=zj2.总金额/zj2.完工数量
+zj2['每吨分摊']=zj2.总金额*1000/zj2.完工重量
+zj2['分摊类型1']='折旧分摊'
+zj2['分摊类型2']='仓储折旧'
+
+
+ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
+cursor = ora.cursor()
+cursor.execute("  SELECT distinct IRKIT 短项目号,IROPSQ 工序号,TRIM(b.IWMCUW) 组别2 \
+FROM proddta.F3003  a left join  proddta.F30006 b  on  a.IRMCU=b.IWMCU \
+WHERE IRMMCU IN ('          P1') and TRIM(IRTRT)='M' ")
+list_data=[]
+columns=[]
+for c in cursor.description:
+    columns.append(c[0])
+for row in cursor.fetchall():
+    list_data.append(row)
+cursor.close()
+ora.close()
+catc= pd.DataFrame(list_data)
+catc.columns=columns
+df4_0c1=pd.merge(df4_0,catc,on=['短项目号','工序号'],how='left')
+
+#筛选出原组别中，跟工艺路线匹配的组别，百分比大表示匹配度低，超过20，则用整体分摊
+#低于20，按组别分摊折旧
+ix=[]
+for i in df4_0c1.index:
+    if df4_0c1.loc[i,'原组别']!=df4_0c1.loc[i,'组别2']:
+        ix.append(i)
+df4_0c2=df4_0c1[df4_0c1.index.isin(ix)]
+n1=[]
+n2=[]
+for i in df4_0c2[(df4_0c2.原组别!='')&(df4_0c2.原组别.notna())].原组别.unique():
+    a=df4_0c2[df4_0c2.原组别==i]
+    b=df4_0c1[df4_0c1.原组别==i]
+    n=a.完工重量.sum()*100/b.完工重量.sum()
+    n1.append(i)
+    n2.append(n)
+n3=pd.DataFrame([n1,n2],index=['原组别','百分比']).T
+
+# QC-100001 不参与折旧，故不考虑
+#百分比大于80的说明，错误的很多，进行整体问题；小于80的，按组别分摊（一般错误在10以内）
+n4=n3[(n3.百分比>=80)&(n3.原组别!='QC-100001')]
+
+b6=df4_0c1[df4_0c1.原组别.isin(n4.原组别)==False].groupby(['原组别']).agg({
+    '完工数量':'sum','完工重量':'sum'}).reset_index()
+a7=a6[a6.组别.isin(['K01','10600'])==False]
 
 #有组别折旧
-zj4=cw[cw.成本类型2=='有组别折旧'].groupby(\
-            ['组别'])['金额'].sum().to_frame().reset_index()
-zj4.columns=['组别','金额']
-zj_amt=pd.merge(zj4,b2x,on='组别',how='left')
+zj_amt1=pd.merge(a7[(a7.组别.isin(b6.原组别))&(a7.组别.isin(\
+    ['C03','C04','C05','B02','D02'])==False)],b6,\
+                 left_on='组别',right_on='原组别',how='left')
+#把c04,c05的金额放到c03去
+zj_amt2=pd.merge(a7[a7.组别=='C03'],b6,left_on='组别',right_on='原组别',how='left')
+zj_amt2['总金额']=zj_amt2['总金额']+a7[a7.组别.isin(['C04','C05'])].总金额.sum()
+#把D02的金额放到b02去
+zj_amt3=pd.merge(a7[a7.组别=='B02'],b6,left_on='组别',right_on='原组别',how='left')
+zj_amt3['总金额']=zj_amt3['总金额']+a7[a7.组别=='D02'].总金额.sum()
+zj_amt=pd.concat([zj_amt1,zj_amt2,zj_amt3]).drop('原组别',axis=1)
 zj_amt['模具项目号']=0
-zj_amt['单支分摊']=zj_amt.金额/zj_amt.完工数量
-zj_amt['每吨分摊']=zj_amt.金额*1000/zj_amt.完工重量
-zj_amt.columns=['组别','总金额','完工数量','完工重量','模具项目号','单支分摊','每吨分摊']
+zj_amt['单支分摊']=zj_amt.总金额/zj_amt.完工数量
+zj_amt['每吨分摊']=zj_amt.总金额*1000/zj_amt.完工重量
 zj_amt['分摊类型1']='折旧分摊'
 zj_amt['分摊类型2']='有组别折旧'
 
-#其他，分摊给全部产品
-other_amt=pd.DataFrame([df5d.数量.sum(),df5d.重量.sum(),\
-        cw[cw.成本类型1=='其他'].金额.sum()],index=['数量','重量','金额']).T
-other_amt['模具项目号']=0
-other_amt['单支分摊']=other_amt.金额/other_amt.数量
-other_amt['每吨分摊']=other_amt.金额*1000/other_amt.重量.sum()
-other_amt.columns=['完工数量','完工重量','总金额','模具项目号','单支分摊','每吨分摊']
-other_amt['分摊类型1']='其他分摊'
-other_amt['分摊类型2']=np.nan
+
+a8=a7[(a7.组别.isin(b6.原组别)==False)&\
+   (a7.组别.isin(['C03','C04','C05','B02','D02'])==False)]
+
+#整体折旧
+zj3=pd.DataFrame([df5d.数量.sum(),df5d.重量.sum(),\
+        a8.总金额.sum()],index=['数量','重量','总金额']).T
+zj3['模具项目号']=0
+zj3['单支分摊']=zj3.总金额/zj3.数量
+zj3['每吨分摊']=zj3.总金额*1000/zj3.重量.sum()
+zj3.columns=['完工数量','完工重量','总金额','模具项目号','单支分摊','每吨分摊']
+zj3['分摊类型1']='整体折旧'
 
 
 # 水电蒸汽用量
@@ -730,7 +824,7 @@ import cx_Oracle
 import pandas as pd
 ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
-cursor.execute(" select TRIM(a.MEITM) 短项目号,TRIM(MEDSC1) 机型,TRIM(MEDL02) 工序码\
+cursor.execute(" select distinct TRIM(a.MEITM) 短项目号,TRIM(MEDSC1) 机型,TRIM(MEDL02) 工序码\
 ,a.MESOQS/1000000 千支生产时间h from proddta.F564724A  a  ")
 list_data=[]
 columns=[]
@@ -920,6 +1014,7 @@ for i in ['模具项目号','短项目号']:
 #一年算一次，计算的是上一年的分摊数据
 t=nt-1
 amt['分摊计算时间']=t
+
 
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")

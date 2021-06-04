@@ -629,27 +629,12 @@ ora.close()
 df31= pd.DataFrame(list_data)
 df31.columns=columns
 
-# 把物料小类，物料大类 拼接到验收表
-ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
-cursor = ora.cursor()
-cursor.execute(" select distinct TRIM(IMPRP3) 工序码_油, TRIM(IMPRP2) 物料小类,TRIM(IMPRP1) 物料大类_,\
-TRIM(IMITM) 短项目号,TRIM(IMLITM) 项目号 from proddta.F4101 where TRIM(IMPRP2)!='FM' and \
-(TRIM(IMPRP4)='SM' or TRIM(IMPRP4)='PM') ")
-list_data=[]
-columns=[]
-for c in cursor.description:
-    columns.append(c[0])
-for row in cursor.fetchall():
-    list_data.append(row)
-cursor.close()
-ora.close()
-df32= pd.DataFrame(list_data)
-df32.columns=columns
+
 
 # 匹配短项目号用
 ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
-cursor.execute(" select distinct TRIM(IMITM) 短项目号,TRIM(IMLITM) 项目号 from proddta.F4101  ")
+cursor.execute(" select distinct TRIM(IMITM) 模具项目号,TRIM(IMLITM) 项目号 from proddta.F4101  ")
 list_data=[]
 columns=[]
 for c in cursor.description:
@@ -662,11 +647,29 @@ match= pd.DataFrame(list_data)
 match.columns=columns
 
 #验收表，没有短项目号的，先根据项目号，匹配进短项目号
-df31_1=pd.merge(df31[df31.短项目号=='0'].drop('短项目号',axis=1),\
+df31_1=pd.merge(df31[df31.模具项目号=='0'].drop('模具项目号',axis=1),\
          match,on='项目号',how='left')
-df31_m=pd.concat([df31[df31.短项目号!='0'],df31_1]).drop('项目号',axis=1)
+df31_m=pd.concat([df31[df31.模具项目号!='0'],df31_1]).drop('项目号',axis=1)
 
-df312=pd.merge(df31_m,df32,on='短项目号',how='left').drop('短项目号',axis=1)
+# 把物料小类，物料大类 拼接到验收表
+ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
+cursor = ora.cursor()
+cursor.execute(" select distinct TRIM(IMPRP3) 工序码_油, TRIM(IMPRP2) 物料小类,TRIM(IMPRP1) 物料大类_,\
+TRIM(IMITM) 模具项目号,TRIM(IMLITM) 项目号 from proddta.F4101 where TRIM(IMPRP2)!='FM' and \
+(TRIM(IMPRP4)='SM' or TRIM(IMPRP4)='PM') ")
+list_data=[]
+columns=[]
+for c in cursor.description:
+    columns.append(c[0])
+for row in cursor.fetchall():
+    list_data.append(row)
+cursor.close()
+ora.close()
+df32= pd.DataFrame(list_data)
+df32.columns=columns
+
+df312=pd.merge(df31_m,df32,on='模具项目号',how='left').dropna(subset=['模具项目号'],axis=0)
+
 
 #匹配组别
 ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
@@ -735,7 +738,7 @@ ap7.to_sql('物料验收表', engine, if_exists='append', index=False,
 ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
 cursor.execute(" select ntod(GLDGJ) 总帐日期,TRIM(GLMCU) 经营单位,TRIM(GLDCT) 单据类型,\
-TRIM(GLOBJ) 科目帐,TRIM(GLSUB) 明细帐,GLAA/100 金额,GLEXA 说明 \
+TRIM(GLOBJ) 科目帐,TRIM(GLSUB) 明细帐,GLAA/100 金额,TRIM(GLEXA) 说明 \
 from proddta.f0911  where TRIM(GLOBJ)='4201' and \
  GLDGJ>=DTON('" +later_day+ "') AND GLDGJ<=DTON('" + near_day + "')  ")
 list_data=[]
@@ -808,6 +811,13 @@ cw=cw.fillna('')
 cw=cw.groupby(['日期','经营单位','单据类型','科目帐','明细帐','说明','处理后组别', '成本类型1',
        '成本类型2', '组别']).agg({'金额':'sum'}).reset_index()
 
+def get1(x):
+    if  x[:2]=='暂估' or x[:1]=='暂' or x[1:2]=='估':
+        return x[:2]
+    else:
+        return ''
+cw['标记']=cw.说明.apply(get1)
+
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
 cur=connection.cursor()
@@ -846,7 +856,8 @@ ap8.to_sql('财务实际成本11', engine, if_exists='append', index=False,
                  '处理后组别': sqlalchemy.types.String(length=10),
                  '金额': sqlalchemy.types.FLOAT(),
                  '成本类型1': sqlalchemy.types.String(length=10),
-                 '成本类型2': sqlalchemy.types.String(length=10)})
+                 '成本类型2': sqlalchemy.types.String(length=10),
+                 '标记': sqlalchemy.types.String(length=10)})
 #engine.connect().execute(" ALTER TABLE 财务实际成本11 ADD PRIMARY KEY (日期,经营单位,科目帐,明细帐,金额,说明,处理后组别,成本类型1,成本类型2); ")
 
 

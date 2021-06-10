@@ -739,7 +739,7 @@ ora = cx_Oracle.connect('TONGTJ',' TONGTJ','172.16.4.14:1521/TMJDEDB')
 cursor = ora.cursor()
 cursor.execute(" select ntod(GLDGJ) 总帐日期,TRIM(GLMCU) 经营单位,TRIM(GLDCT) 单据类型,\
 TRIM(GLOBJ) 科目帐,TRIM(GLSUB) 明细帐,GLAA/100 金额,TRIM(GLEXA) 说明 \
-from proddta.f0911  where TRIM(GLOBJ)='4201' and \
+from proddta.f0911  where TRIM(GLOBJ) in ('4201','5141') and \
  GLDGJ>=DTON('" +later_day+ "') AND GLDGJ<=DTON('" + near_day + "')  ")
 list_data=[]
 columns=[]
@@ -754,62 +754,45 @@ df7.columns=columns
 
 #环保废水、污泥费
 #经营单位='P1' AND 科目帐='4201' AND 明细帐='20'
-hb2=df7[(df7['经营单位']=='P1')&(df7['明细帐']=='20')]
+hb2=df7[(df7.科目帐=='4201')&(df7['经营单位']=='P1')&(df7['明细帐']=='20')]
 hb2.columns=['日期','经营单位','单据类型','科目帐','明细帐','金额','说明']
-hb2['处理后组别']='无制程'
 hb2['成本类型1']='环保'
 hb2['成本类型2']='财报污泥处置'
 
 #设备折旧
-#科目帐='4201' AND 明细帐='05' and 经营单位<>'PW'
-zj=df7[(df7['经营单位'].isin(['10900','10902','10903','10904',\
-'10905','10906','10908','S21'])==False)&(df7['经营单位']!='PW')\
-       &(df7['明细帐']=='05')]
+#科目帐='4201' AND 明细帐='05'
+zj=df7[(df7.科目帐=='4201')&(df7['明细帐']=='05')]
 zj.columns=['日期','经营单位','单据类型','科目帐','明细帐','金额','说明']
 zj['成本类型1']='折旧'
-zj_mx1=zj[zj.经营单位=='P1']
-zj_mx1['成本类型2']='包装折旧'
-zj_mx1['处理后组别']='包装组'
 
-zj_mx2=zj[zj.经营单位.isin(['10700','D02','C04','11000'])]
-zj_mx2['成本类型2']='其他折旧'
-zj_mx2['处理后组别']='无制程'
-
-zj_mx3=zj[zj.经营单位=='PP']
-zj_mx3['成本类型2']='仓储折旧'
-zj_mx3['处理后组别']='仓储组'
-
-zj_mx4=zj[zj.经营单位.isin(['P1','10700','D02','C04','PP','11000'])==False]
-zj_mx4['成本类型2']='有组别折旧'
-zj_mx4['处理后组别']=zj_mx4.经营单位
-zj_mx4.columns=['日期','组别','单据类型','科目帐','明细帐','金额','说明','成本类型1', '成本类型2',
-       '处理后组别']
+#研发
+#科目帐='5141'
+yf=df7[(df7.科目帐=='5141')&(df7['经营单位']=='11000')&\
+       (df7['明细帐'].isin(['280489','280490','280491','280492']))]
+yf.columns=['日期','经营单位','单据类型','科目帐','明细帐','金额','说明']
+yf['成本类型1']='研发'
 
 #其他，分摊给全部产品
 other=df7[(df7['明细帐'].isin(['04','06','08','11','13','16','17','18','19','22']))\
- &(df7['经营单位']!='PW')]
+ &(df7['经营单位']!='PW')&(df7.科目帐=='4201')]
 other.columns=['日期','经营单位','单据类型','科目帐','明细帐','金额','说明']
-other['处理后组别']='无制程'
 other['成本类型1']='其他'
-other['成本类型2']=np.nan
 
 #水电蒸汽总金额
-wt_mx=df7[(df7.明细帐=='03')]
+wt_mx=df7[(df7.科目帐=='4201')&(df7.明细帐=='03')]
 wt_mx.columns=['日期','经营单位','单据类型','科目帐','明细帐','金额','说明']
-wt_mx['处理后组别']='无制程'
 wt_mx['成本类型1']='水电蒸汽'
 wt_mx['成本类型2']='水电'
 
-qt_mx=df7[(df7.明细帐=='07')]
+qt_mx=df7[(df7.科目帐=='4201')&(df7.明细帐=='07')]
 qt_mx.columns=['日期','经营单位','单据类型','科目帐','明细帐','金额','说明']
-qt_mx['处理后组别']='无制程'
 qt_mx['成本类型1']='水电蒸汽'
 qt_mx['成本类型2']='蒸汽'
 
-cw=pd.concat([hb2,zj_mx1,zj_mx2,zj_mx3,zj_mx4,other,wt_mx,qt_mx])
+cw=pd.concat([hb2,zj,yf,other,wt_mx,qt_mx])
 cw=cw.fillna('')
-cw=cw.groupby(['日期','经营单位','单据类型','科目帐','明细帐','说明','处理后组别', '成本类型1',
-       '成本类型2', '组别']).agg({'金额':'sum'}).reset_index()
+cw=cw.groupby(['日期','经营单位','单据类型','科目帐','明细帐','说明', '成本类型1',
+       '成本类型2']).agg({'金额':'sum'}).reset_index()
 
 def get1(x):
     if  x[:2]=='暂估' or x[:1]=='暂' or x[1:2]=='估':
@@ -852,13 +835,11 @@ ap8.to_sql('财务实际成本11', engine, if_exists='append', index=False,
                  '科目帐': sqlalchemy.types.INT(),
                  '明细帐':sqlalchemy.types.INT(),
                  '说明':sqlalchemy.types.String(length=100),
-                 '组别': sqlalchemy.types.String(length=10),
-                 '处理后组别': sqlalchemy.types.String(length=10),
                  '金额': sqlalchemy.types.FLOAT(),
                  '成本类型1': sqlalchemy.types.String(length=10),
                  '成本类型2': sqlalchemy.types.String(length=10),
                  '标记': sqlalchemy.types.String(length=10)})
-#engine.connect().execute(" ALTER TABLE 财务实际成本11 ADD PRIMARY KEY (日期,经营单位,科目帐,明细帐,金额,说明,处理后组别,成本类型1,成本类型2); ")
+#engine.connect().execute(" ALTER TABLE 财务实际成本11 ADD PRIMARY KEY (日期,经营单位,科目帐,明细帐,金额,说明,成本类型1,成本类型2); ")
 
 
 #皮膜   生产二部录入成本95:取最大值

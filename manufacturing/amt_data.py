@@ -31,14 +31,15 @@ ora.close()
 df1x= pd.DataFrame(list_data)
 df1x.columns=columns
 df1x['汇总']=df1x['短项目号'].str.cat(df1x['模具项目号']).str.cat(df1x['工序号'])
-R=[]
-for i in df1x.汇总.unique():
-    a=df1x[df1x.汇总==i]
-    if a.R.unique().shape[0]==2:
-        R.append(a[a.R=='R'])
-    else:
-        R.append(a)
-df1=pd.concat(R)
+df2x=df1x.groupby(['汇总'])['R'].count().to_frame().reset_index()
+#如R只有一个值，则取该值
+df3x=df1x[df1x.汇总.isin(df2x[df2x.R==1].汇总.unique())]
+df4x=df1x[df1x.汇总.isin(df2x[df2x.R!=1].汇总.unique())]
+#如R有几个值，有R则取R
+df5x=df4x[df4x.R=='R'].drop_duplicates(subset=['汇总'],keep='first')
+df6x=df4x[df4x.汇总.isin(df5x.汇总.unique())==False]
+#如R有几个值，无R则取R3
+df1=pd.concat([df3x,df5x,df6x[df6x.R=='R3']])
 df1['短项目号']=df1.短项目号.astype(int)
 df1['工序号']=df1.工序号.astype(int)
 
@@ -624,7 +625,7 @@ data11.columns=columns
 
 data11['开始日期']=pd.to_datetime(data11.开始日期,format='%Y-%m-%d')
 data11['结束日期']=pd.to_datetime(data11.结束日期,format='%Y-%m-%d')
-data11=data11[(data11.结束日期>=ay1)&(data11.开始日期<=ay2)].dropna(subset=['原值'],axis=0)
+data11=data11[(data11.结束日期>ay1)&(data11.开始日期<ay2)].dropna(subset=['原值'],axis=0)
 data11['今年初']=ay1
 data11['今年末']=ay2
 data11['今年初']=pd.to_datetime(data11.今年初,format='%Y-%m-%d')
@@ -643,17 +644,13 @@ a2['总金额']=(a2.原值-a2.预计残值)*a2.天数2/(a2.折旧年份*365)
 a3=data11[data11.index.isin(a1.index|a2.index)==False]
 a3['总金额']=(a3.原值-a3.预计残值)/a3.折旧年份
 a4=pd.concat([a1,a2,a3])
-z1=['10500','10102','X01', '10100','10104','10400','10000','PG',\
-   '10103','PH','PK-101K01']
-a5=a4[a4.组别.isin(z1)==False]
-a6=a5.groupby(['组别'])['总金额'].sum().to_frame().reset_index()
+z=pd.read_excel(r'\\172.16.6.20\public\BI\数据中心\正式开发文档\手工数据\组别分部.xlsx')
+a5=pd.merge(a4,z,on='组别',how='left')
+a6=a5[a5.分部.isin(['P1','PW'])].groupby(['组别','分部'])['总金额'].sum().to_frame().reset_index()
+
 
 a6['总金额']=a6.总金额*cw[cw.成本类型1.isin(['折旧','研发'])].金额.sum()/a6.总金额.sum()
-z2=['10600','10700','10701','10702','10703','10704',\
-'A01','A02','A03','A04','B01','B02','B03','B04','B05',\
-'C01','C02','C03', 'C04','C05','D01','D02', \
-'E01','G01','K01','M01','P01','R01','S01','T01','T02','Y01']
-a6=a6[a6.组别.isin(z2)]
+a6=a6[a6.分部=='P1']
 
 #包装折旧
 zj1=a6[a6.组别=='K01']
@@ -1017,26 +1014,22 @@ for i in ['模具项目号','短项目号']:
     amt[i]=amt[i].astype(int)
 
 #一年算一次，计算的是上一年的分摊数据
-t=nt-1
-amt['分摊计算时间']=t
+amt['分摊计算时间']=ay1
+amt['分摊计算时间']=pd.to_datetime(amt.分摊计算时间,format='%Y-%m-%d')
 
+
+import pandas as pd
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
 cur=connection.cursor()
-cur.execute("SELECT  distinct 分摊计算时间  FROM 分摊表   ")
-list_data=[]
-columns=[]
-for c in cur.description:
-    columns.append(c[0])
-for row in cur.fetchall():
-    list_data.append(row)
-connection.commit()
-cur.close()
-connection.close()
-ft = pd.DataFrame(list_data)
-ft.columns=columns
+try:
+   cur.execute("DELETE  FROM 分摊表 where 分摊计算时间 ='" + ay1 + "'")
+   connection.commit()
+   print("delete OK")
+except:
+   connection.rollback()
 
-ap=amt[amt.分摊计算时间.isin(ft.分摊计算时间)==False]
+
 
 #存入数据
 from sqlalchemy import create_engine
@@ -1045,8 +1038,8 @@ import psycopg2
 engine = create_engine('postgresql+psycopg2://'+'chengben'+':\
 '+'np69gk48fo5kd73h'+'@192.168.2.156'+':'+str(5432) + '/' + 'chengben')
 #engine.connect().execute(" DROP TABLE 分摊表 ")
-ap.to_sql('分摊表', engine, if_exists='append', index=False,
-          dtype={'分摊计算时间': sqlalchemy.types.INT(),
+amt.to_sql('分摊表', engine, if_exists='append', index=False,
+          dtype={'分摊计算时间': sqlalchemy.types.DATE(),
                  '模具项目号': sqlalchemy.types.INT(),
                  '短项目号': sqlalchemy.types.INT(),
                  '工序码':sqlalchemy.types.String(length=20),
@@ -1063,6 +1056,7 @@ ap.to_sql('分摊表', engine, if_exists='append', index=False,
                  '每吨分摊': sqlalchemy.types.FLOAT(),
                  '分摊类型1':sqlalchemy.types.String(length=30),
                  '分摊类型2': sqlalchemy.types.String(length=30),})
-#engine.connect().execute(" ALTER TABLE 分摊表 ADD PRIMARY KEY (模具项目号,单支分摊,每吨分摊,模具寿命,短项目号,分摊类型2,组别,工序码,机型,处理后组别); ")
+if ay1=='2020-1-1':
+    engine.connect().execute(" ALTER TABLE 分摊表 ADD PRIMARY KEY (模具项目号,单支分摊,每吨分摊,模具寿命,短项目号,分摊类型2,组别,工序码,机型,处理后组别); ")
 
 print('完成')

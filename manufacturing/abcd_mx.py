@@ -1,13 +1,12 @@
 import datetime
 import numpy as np
 import pandas as pd
-nt=datetime.datetime.now()
-zt= nt - datetime.timedelta(days=1)
+from dateutil.relativedelta import relativedelta
+zt=datetime.datetime.now()-datetime.timedelta(days=1)
 near_day=zt.strftime('%Y-%m-%d')
-lt= nt-datetime.timedelta(days=14)
-later_day=lt.strftime('%Y-%m-%d')
-print(near_day)
-print(later_day)
+nd=zt.strftime('%Y-%m')+'-1'
+ld=pd.Timestamp(nd).to_pydatetime()-relativedelta(months=3)
+later_day=ld.strftime('%Y-%m-%d')
 
 # 物料耗用数据:
 import pandas as pd
@@ -28,6 +27,7 @@ connection.close()
 df2x = pd.DataFrame(list_data)
 df2x.columns=columns
 df2x['模具项目号']=df2x.模具项目号.astype(str)
+
 
 # 物料验收表全部数据，用于匹配单位成本
 import cx_Oracle
@@ -148,6 +148,7 @@ x212a=x212a[(x212a.单位成本!=0)&(x212a.单位成本.notna())]
 dx12=pd.concat([x211,x212a,x1]).drop(['定单日期'],axis=1)
 dx12=dx12.fillna('')
 
+
 # w12 为化学品，需要单独处理
 dx1=dx12[dx12['物料小类']!='W12']
 dx2=dx12[dx12['物料小类']=='W12']
@@ -162,7 +163,7 @@ b=b.rename(columns={'主计量':'数量'})
 c['总金额']=c.辅计量*c.单位成本
 c=c.rename(columns={'辅计量':'数量'})
 abc_x=pd.concat([a,b,c]).reset_index(drop=True)
-abc=abc_x.groupby(['日期','模具项目号','批次序列号','组别','工序码','物料大类','物料小类','单位成本']).agg({
+abc=abc_x.groupby(['日期','模具项目号','批次序列号','原组别','组别','工序码','物料大类','物料小类','单位成本']).agg({
     '数量':'sum','总金额':'sum'
 }).reset_index()
 abc['成本类型1']='ABC物料'
@@ -172,7 +173,7 @@ abc['成本类型1']='ABC物料'
 dx2['总金额']=dx2['辅计量']*dx2['单位成本']
 dx2['数量']=dx2.辅计量
 w12=dx2[(dx2.组别!='L02')&(dx2.组别.notna())].groupby(
-    ['日期','模具项目号','组别','物料大类','物料小类','单位成本']).agg({
+    ['日期','模具项目号','原组别','组别','物料大类','物料小类','单位成本']).agg({
     '数量':'sum','总金额':'sum'}).reset_index()
 w12['成本类型1']='化学品'
 
@@ -207,9 +208,6 @@ d=df34[(df34.物料大类_=='DM')&(df34.物料小类!='MMJ')&(df34.组别!='L04'
 d['金额']=d.验收数量*d.单位成本
 
 # D类中的 油品'LLO',根据报工表（成型1000），按重量分摊
-d2=d[d['物料小类']=='LLO']
-
-# D类中的 油品'LLO',根据报工表（成型1000），按重量分摊
 d2=d[(d['物料小类']=='LLO')&(d['组别']!='K01')]
 llo_mix1=d2[d2.工序码_油!=''].groupby(
     ['定单日期','模具项目号','工序码_油','物料大类_','物料小类','组别','单位成本']).agg({
@@ -237,6 +235,7 @@ dc_mx=dc.groupby(
 dc_mx['成本类型1']='D类物料'
 dc_mx['成本类型2']='仓储物料'
 dc_mx.columns=['日期','模具项目号','组别','物料大类','物料小类','单位成本','数量','总金额','成本类型1','成本类型2']
+
 
 #d类剔除 ['LLO','K01','Z01','L01','L02']
 d1=d[(d.组别.isin(['LLO','K01','Z01','L01','L02'])==False)&\
@@ -267,27 +266,21 @@ hb_d['成本类型1']='D类物料'
 hb_d['成本类型2']='环保'
 
 mx=pd.concat([abc,w12,hb1,llo_mx,dc_mx,d_mx,db_mx,hb_d])
-mx=mx.fillna('')
+mx=mx.fillna('').reset_index(drop=True)
+print(mx)
 
 import pandas as pd
 import psycopg2
 connection = psycopg2.connect(database="chengben", user="chengben", password="np69gk48fo5kd73h", host="192.168.2.156", port="5432")
 cur=connection.cursor()
-cur.execute("SELECT  日期  FROM  物料实际成本9 \
+try:
+   cur.execute("DELETE    FROM  物料实际成本9 \
 WHERE 日期 >='" + later_day + "' AND 日期 <= '" + near_day + "'")
-list_data=[]
-columns=[]
-for c in cur.description:
-    columns.append(c[0])
-for row in cur.fetchall():
-    list_data.append(row)
-connection.commit()
-cur.close()
-connection.close()
-data9 = pd.DataFrame(list_data)
-data9.columns=columns
+   connection.commit()
+   print("delete OK")
+except:
+   connection.rollback()
 
-ap=mx[mx.日期.isin(data9.日期)==False]
 
 #存入数据
 from sqlalchemy import create_engine
@@ -296,12 +289,13 @@ import psycopg2
 engine = create_engine('postgresql+psycopg2://'+'chengben'+':\
 '+'np69gk48fo5kd73h'+'@192.168.2.156'+':'+str(5432) + '/' + 'chengben')
 #engine.connect().execute(" DROP TABLE 物料实际成本9 ")
-ap.to_sql('物料实际成本9', engine, if_exists='append', index=False,
+mx.to_sql('物料实际成本9', engine, if_exists='append', index=False,
           dtype={'日期': sqlalchemy.types.DATE(),
                  '模具项目号': sqlalchemy.types.INT(),
                  '批次序列号':sqlalchemy.types.String(length=20),
                  '工序码_油': sqlalchemy.types.String(length=20),
                  '工序码': sqlalchemy.types.String(length=20),
+                 '原组别': sqlalchemy.types.String(length=10),
                  '组别': sqlalchemy.types.String(length=10),
                  '物料大类':sqlalchemy.types.String(length=10),
                  '物料小类':sqlalchemy.types.String(length=10),
@@ -311,5 +305,7 @@ ap.to_sql('物料实际成本9', engine, if_exists='append', index=False,
                  '成本类型1': sqlalchemy.types.String(length=20),
                  '成本类型2': sqlalchemy.types.String(length=20),
                  '成本类型3': sqlalchemy.types.String(length=20)})
-#engine.connect().execute(" ALTER TABLE 物料实际成本9 ADD PRIMARY KEY (日期,模具项目号,批次序列号,组别,物料大类,物料小类,工序码,工序码_油,单位成本,数量); ")
+#engine.connect().execute(" ALTER TABLE 物料实际成本9 ADD PRIMARY KEY (日期,模具项目号,批次序列号,原组别,组别,物料大类,物料小类,工序码,工序码_油,单位成本,数量); ")
 
+
+print("完成")
